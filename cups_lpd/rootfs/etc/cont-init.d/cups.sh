@@ -391,6 +391,61 @@ for _ in $(seq 1 25); do
     [ -S /run/dbus/system_bus_socket ] && break
     sleep 0.2
 done
+# lpd11: bind Avahi to the LAN interface (the one with the default route).
+AVAHI_CONF=/etc/avahi/avahi-daemon.conf
+LAN_IF="$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')"
+if [ -n "$LAN_IF" ]; then
+    sed -i "s|^#\?allow-interfaces=.*|allow-interfaces=${LAN_IF}|" "$AVAHI_CONF"
+    echo "Avahi: publishing on interface ${LAN_IF} only."
+else
+    echo "Avahi: default route interface not found; publishing on all interfaces."
+fi
+
+# lpd11: advertise every CUPS queue as an LPD service on port 515.
+# cupsd itself registers _printer._tcp with port 0 ("no LPD"), so LPD
+# clients such as PrinterShare had nothing usable to find.
+xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+mkdir -p /etc/avahi/services
+rm -f /etc/avahi/services/lpd-*.service
+if [ -f "$CONFIG_DIR/printers.conf" ]; then
+    pname=""; pinfo=""; pmodel=""; pshared="Yes"
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            "<Printer "*|"<DefaultPrinter "*)
+                pname="${line#* }"; pname="${pname%>}"; pinfo=""; pmodel=""; pshared="Yes" ;;
+            "Info "*)      pinfo="${line#Info }" ;;
+            "MakeModel "*) pmodel="${line#MakeModel }" ;;
+            "Shared "*)    pshared="${line#Shared }" ;;
+            "</Printer>"|"</DefaultPrinter>")
+                if [ -n "$pname" ] && [ "$pshared" != "No" ]; then
+                    title="${pinfo:-$pname} (LPD)"
+                    model="${pmodel:-$pname}"
+                    cat > "/etc/avahi/services/lpd-${pname}.service" << EOS
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name>$(xml_escape "$title")</name>
+  <service>
+    <type>_printer._tcp</type>
+    <port>515</port>
+    <txt-record>txtvers=1</txt-record>
+    <txt-record>qtotal=1</txt-record>
+    <txt-record>rp=$(xml_escape "$pname")</txt-record>
+    <txt-record>ty=$(xml_escape "$model")</txt-record>
+    <txt-record>product=($(xml_escape "$model"))</txt-record>
+    <txt-record>note=$(xml_escape "${pinfo:-$pname}")</txt-record>
+    <txt-record>pdl=application/postscript,application/pdf,application/octet-stream</txt-record>
+    <txt-record>priority=30</txt-record>
+  </service>
+</service-group>
+EOS
+                    echo "Avahi: LPD service for queue '${pname}' on port 515."
+                fi
+                pname="" ;;
+        esac
+    done < "$CONFIG_DIR/printers.conf"
+fi
+
 if [ ! -S /run/avahi-daemon/socket ]; then
     if avahi-daemon --daemonize --no-drop-root --no-rlimits; then
         echo "Avahi started."

@@ -10,6 +10,10 @@ Based on [arest/cups-addon](https://github.com/arest/cups-addon) (Apache-2.0).
   (data length `2147483647`, empty queue name, `printers/<name>` queue prefix).
 - Jobs of type `l` are passed to CUPS as raw (`lp -o raw`); other types go through CUPS filters.
 - Empty queue name → CUPS default printer.
+- (lpd11) Each shared CUPS queue is announced via Bonjour as `_printer._tcp` on port 515
+  (cupsd itself announces LPD with port 0), and Avahi is bound to the LAN interface only
+  with the reflector off, so discovery is fast and stable. Queues added later are
+  announced after the add-on restarts.
 
 ## Install
 1. Settings → Add-ons → Add-on store → ⋮ → Repositories → add

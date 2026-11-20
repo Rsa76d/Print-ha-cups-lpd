@@ -1,5 +1,5 @@
 ---
-version: 1.3.7-lpd10
+version: 1.3.7-lpd11
 slug: cups_lpd
 name: CUPS Print Server (LPD)
 description: CUPS print server with LPD gateway (port 515) for PrinterShare
